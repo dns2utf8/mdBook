@@ -10,3 +10,4 @@ book-example/book
 .vscode
 tests/dummy_book/book/
 
+*.kate-swp

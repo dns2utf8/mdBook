@@ -1,4 +1,5 @@
 extern crate notify;
+extern crate ignore;
 
 use std::path::Path;
 use self::notify::Watcher;
@@ -50,6 +51,7 @@ where
 {
     use self::notify::RecursiveMode::*;
     use self::notify::DebouncedEvent::*;
+    use self::ignore::Walk;
 
     // Create a channel to receive the events.
     let (tx, rx) = channel();
@@ -62,11 +64,29 @@ where
         }
     };
 
-    // Add the source directory to the watcher
-    if let Err(e) = watcher.watch(book.source_dir(), Recursive) {
-        error!("Error while watching {:?}:\n    {:?}", book.source_dir(), e);
-        ::std::process::exit(1);
-    };
+    // Add the source directory to the watcher respecting .gitignore
+    for entry in Walk::new(book.source_dir()) {
+        let res = entry
+                    .map_err(stringify)
+                    .and_then(|entry| {
+                        if let Some(ft) = entry.file_type() {
+                            if ft.is_dir() == false {
+                                return watcher.watch(entry.path(), NonRecursive).map_err(stringify);
+                            }
+                        }
+                        // ignore walk errors eg. file move during setup
+                        Ok(())
+                    })
+                    ;
+        if let Err(e) = res {
+            error!("Error while watching {:?}:\n    {}", book.source_dir(), e);
+            ::std::process::exit(1);
+        }
+
+        fn stringify<D: ::std::fmt::Debug>(e: D) -> String {
+            format!("{:?}", e)
+        }
+    }
 
     let _ = watcher.watch(book.theme_dir(), Recursive);
 
